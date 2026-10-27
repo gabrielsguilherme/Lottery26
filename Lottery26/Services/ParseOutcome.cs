@@ -9,9 +9,7 @@ namespace Lottery26.Services;
 
 public class ParseOutcome
 {
-    private Dictionary<int, int> Low { get; set; } = new();
-    private Dictionary<int, int> Mid { get; set; } = new();
-    private Dictionary<int, int> Max { get; set; } = new();
+
 
     private List<Outcome> _outcomes = new();
     private List<int> _allNumbers = new();
@@ -128,14 +126,12 @@ public class ParseOutcome
 
     public void GenerateBet()
     {
-        SplitNumbers();
-
-        FirstBet = DoTheMagic();
-        SecondBet = DoTheMagic();
-        ThirdBet = DoTheMagic();
-        FouthBet = DoTheMagic();
-        FiveBet = DoTheMagic();
-        SixthBet = DoTheMagic();
+        FirstBet = GenerateSingleBet();
+        SecondBet = GenerateSingleBet();
+        ThirdBet = GenerateSingleBet();
+        FouthBet = GenerateSingleBet();
+        FiveBet = GenerateSingleBet();
+        SixthBet = GenerateSingleBet();
     }
 
     private void OrderOutcomes()
@@ -148,78 +144,61 @@ public class ParseOutcome
             .ToDictionary(x => x.Key, x => x.Value);
     }
 
-    private void SplitNumbers()
-    {
-        OrderOutcomes();
-
-        if (_orderByOutcome.Count < 3)
-            throw new InvalidOperationException($"Não há números suficientes para dividir em grupos. Encontrados: {_orderByOutcome.Count}");
-
-        Low = new Dictionary<int, int>();
-        Mid = new Dictionary<int, int>();
-        Max = new Dictionary<int, int>();
-
-        var count = _orderByOutcome.Count;
-        var groupSize = count / 3;
-        var remainder = count % 3;
-        var orderedItems = _orderByOutcome.ToList();
-
-        var index = 0;
-        for (var i = 0; i < groupSize; i++, index++)
-            Low.Add(orderedItems[index].Key, orderedItems[index].Value);
-
-        for (var i = 0; i < groupSize; i++, index++)
-            Mid.Add(orderedItems[index].Key, orderedItems[index].Value);
-
-        for (var i = 0; i < groupSize + remainder; i++, index++)
-            Max.Add(orderedItems[index].Key, orderedItems[index].Value);
-
-        LogSplittedOutcomes(Low, "Low-Bets");
-        LogSplittedOutcomes(Mid, "Mid-Bets");
-        LogSplittedOutcomes(Max, "High-Bets");
-    }
-
-    private void LogSplittedOutcomes(Dictionary<int, int> toLog, string betId)
-    {
-        var path = GetPath(betId);
-        var total = _allNumbers.Count;
-
-        using var outputFile = new StreamWriter(path, false, Encoding.UTF8);
-        outputFile.WriteLine("Número   Ocorrências Percentual");
-        outputFile.WriteLine(new string('-', 35));
-
-        foreach (var line in toLog)
-        {
-            var pct = (double)line.Value / total * 100.0;
-            outputFile.WriteLine($"{line.Key,-8} {line.Value,-11} {pct:F2}%");
-        }
-    }
-
-    private string DoTheMagic()
+    private string GenerateSingleBet()
     {
         var selectedNumbers = new HashSet<int>();
 
-        var lowKeys = Low.Keys.ToArray();
-        var midKeys = Mid.Keys.ToArray();
-        var highKeys = Max.Keys.ToArray();
-
-        selectedNumbers.Add(lowKeys[GetSecureRandom(lowKeys.Length)]);
-
-        var attempts = 0;
-        while (selectedNumbers.Count < 5 && attempts < 1000)
+        while (true)
         {
-            selectedNumbers.Add(midKeys[GetSecureRandom(midKeys.Length)]);
-            attempts++;
-        }
+            selectedNumbers.Clear();
 
-        attempts = 0;
-        while (selectedNumbers.Count < 6 && attempts < 1000)
+            // 1. Gera 6 números únicos de 1 a 60
+            while (selectedNumbers.Count < 6)
+            {
+                // GetSecureRandom returns 0 to 59, so we add 1
+                selectedNumbers.Add(GetSecureRandom(60) + 1);
+            }
+
+            var betList = selectedNumbers.OrderBy(n => n).ToList();
+
+            // 2. Filtro de Soma (120 a 210)
+            var sum = betList.Sum();
+            if (sum < 120 || sum > 210)
+                continue;
+
+            // Removido Filtro Par/Ímpar a pedido do usuário
+
+            // 4. Filtro de Alta/Baixa (ao menos 3 números > 31 para evitar divisões comuns)
+            var highNumbers = betList.Count(n => n > 31);
+            if (highNumbers < 3)
+                continue;
+
+            // 5. Filtro de Consecutivos (no máximo 2 números consecutivos permitidos, bloqueia trincas)
+            if (HasConsecutiveMoreThanTwo(betList))
+                continue;
+
+            // Passou em todos os filtros!
+            return string.Join(" - ", betList.Select(n => n.ToString("D2")));
+        }
+    }
+
+    private bool HasConsecutiveMoreThanTwo(List<int> sortedNumbers)
+    {
+        int consecutiveCount = 1;
+        for (int i = 1; i < sortedNumbers.Count; i++)
         {
-            selectedNumbers.Add(highKeys[GetSecureRandom(highKeys.Length)]);
-            attempts++;
+            if (sortedNumbers[i] == sortedNumbers[i - 1] + 1)
+            {
+                consecutiveCount++;
+                if (consecutiveCount >= 3)
+                    return true;
+            }
+            else
+            {
+                consecutiveCount = 1;
+            }
         }
-
-        return string.Join(" - ", selectedNumbers.OrderBy(n => n).Select(n => n.ToString("D2")));
+        return false;
     }
 
     private static int GetSecureRandom(int maxExclusive)
@@ -228,11 +207,6 @@ public class ParseOutcome
             throw new ArgumentOutOfRangeException(nameof(maxExclusive));
 
         return RandomNumberGenerator.GetInt32(maxExclusive);
-    }
-
-    private string GetPath(string fileName)
-    {
-        return Path.Combine(Environment.CurrentDirectory, $"{DateTime.Now:yyyyMMddHHmmssfff}_{fileName}.txt");
     }
 
     private static string Normalize(string value)
